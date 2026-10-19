@@ -522,7 +522,16 @@ p{margin:0}
 .buyr{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:12px;align-items:center;padding:11px 0;border-top:1px solid var(--line)}
 .buyr:first-child{border-top:0}
 .buyr>div{display:grid;gap:2px;min-width:0}
-.stk{display:grid;grid-template-columns:minmax(0,1fr) 150px 84px 176px;gap:12px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
+.stk{display:grid;grid-template-columns:minmax(0,1fr) 150px 230px;gap:16px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
+.stk.head{padding:0 0 8px;border-top:0;font:600 10.5px/1 var(--f-label);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.stk.head span:nth-child(2){text-align:center}.stk.head span:last-child{text-align:right}
+.stk.head+.stk{border-top:1px solid var(--line)}
+.av-b{display:grid;justify-items:end;gap:2px;text-align:right;padding:7px 12px;border-radius:14px;background:var(--ok-soft)}
+.av-b .lbl{display:none}
+.av-b b{font:800 17px/1.1 var(--f-body);color:var(--ok)}
+.av-b small{font-size:11.5px;color:var(--ink-2)}
+.av-b.gold{background:var(--gold-soft)}.av-b.gold b{color:var(--gold)}
+.av-b.bad{background:var(--bad-soft)}.av-b.bad b{color:var(--bad)}
 .stk:first-child{border-top:0}
 .sn2{display:grid;gap:2px;min-width:0}
 .stepper{display:flex;align-items:center;border:1px solid var(--line-2);border-radius:999px;background:var(--surface-2);padding:2px}
@@ -590,7 +599,12 @@ p{margin:0}
   .ttabs{width:100%}.ttabs button{flex:1;padding:10px 8px}
   .otro-add{grid-template-columns:minmax(0,1fr) 110px}.otro-add .btn{grid-column:1/-1}
   .buyr{grid-template-columns:minmax(0,1fr) auto;row-gap:8px}.buyr .chip{grid-column:1}.buyr>.btn{grid-column:1/-1;justify-self:start}
-  .stk{grid-template-columns:minmax(0,1fr) 128px;row-gap:6px}.stk .eq{text-align:left}.stk .chip{justify-self:end}
+  .stk{grid-template-columns:minmax(0,1fr) 128px;row-gap:8px}
+  .stk.head{display:none}.stk.head+.stk{border-top:0}
+  .av-b{grid-column:1/-1;grid-template-columns:auto minmax(0,1fr);justify-items:start;align-items:baseline;column-gap:10px;text-align:left;padding:8px 12px}
+  .av-b .lbl{display:block;font:600 10px/1 var(--f-label);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2)}
+  .av-b b{grid-column:2;grid-row:1;justify-self:end;font-size:16px}
+  .av-b small{grid-column:1/-1}
 }
 
 /* ---------- firma de Wydan ---------- */
@@ -2387,23 +2401,26 @@ function tallerAnio(){
 }
 const STK_TABS=[['ing','Insumos'],['fin','Productos terminados'],['emb','Embalaje y decoración']];
 const STOCK_LEDE='Insumos, productos terminados y embalaje: lo que tenés, lo que ya está reservado para pedidos y lo que falta comprar.';
-const stState=(p,res)=>{const ph=physQ(p),rv=res.need[p.id]||0,disp=ph-rv;
-  if(disp<-1e-6)return ['bad','Faltan '+fQty(-disp,baseUnit(p))];if(!ph)return ['bad','Sin stock'];
-  if(rv)return ['gold','Reservado '+fQty(rv,baseUnit(p))];if(num(p.stock)<1)return ['warn','Queda poco'];return ['ok','En stock'];};
-function stockRows(list,res){return list.map(p=>{const st=stState(p,res);
-  return `<div class="stk"><div class="sn2"><b>${esc(p.nombre)}</b><small class="muted">${esc(p.marca||'')} · envase de ${packLabel(p)}</small></div>
+// A la derecha de cada fila: lo que hay menos lo reservado para pedidos sin entregar.
+function availHTML(ph,rv,u,fmt){const d=ph-rv,cls=d<-1e-6?'bad':d<1e-6?'bad':rv?'gold':'ok';
+  const big=d<-1e-6?'Faltan '+fmt(-d):fmt(Math.max(0,d));
+  const sub=rv?`${fmt(ph)} en stock − ${fmt(rv)} reservado`:ph?'Nada reservado':'Sin stock';
+  return `<div class="av-b ${cls}"${u?` id="sta-${u}"`:''}><span class="lbl">Disponible</span><b class="num">${big}</b><small class="num">${sub}</small></div>`;}
+const pAvail=(p,res)=>availHTML(physQ(p),res.need[p.id]||0,p.id,q=>fQty(q,baseUnit(p)));
+const stkHead=l=>`<div class="stk head" aria-hidden="true"><span>${l}</span><span>En stock</span><span>Disponible</span></div>`;
+function stockRows(list,res){return list.length?stkHead('Producto')+list.map(p=>`<div class="stk"><div class="sn2"><b>${esc(p.nombre)}</b><small class="muted">${esc(p.marca||'')} · envase de ${packLabel(p)} · <span id="stq-${p.id}">${fQty(physQ(p),baseUnit(p))}</span></small></div>
     <div class="stepper"><button class="icon-btn" data-act="stk" data-pid="${p.id}" data-d="-1" aria-label="Un envase menos de ${esc(p.nombre)}">−</button><input class="inp" data-stk="${p.id}" type="number" inputmode="decimal" min="0" step="0.5" value="${num(p.stock)}" aria-label="Envases de ${esc(p.nombre)}"><button class="icon-btn" data-act="stk" data-pid="${p.id}" data-d="1" aria-label="Un envase más de ${esc(p.nombre)}">+</button></div>
-    <span class="small muted num eq" id="stq-${p.id}">${fQty(physQ(p),baseUnit(p))}</span><span class="chip ${st[0]}" id="stc-${p.id}">${st[1]}</span></div>`;}).join('')||'<div class="empty">No hay productos que coincidan.</div>';}
-function finRows(list,res){return list.map(r=>{const n=Math.max(0,num(r.stock)),rv=res.fin[r.id]||0;
-  const st=!n?['none','No hay hechos']:rv>=n?['gold','Reservado para pedidos']:rv?['gold',rv+' reservado'+(rv===1?'':'s')]:['ok','Listo para vender'];
+    ${pAvail(p,res)}</div>`).join(''):'<div class="empty">No hay productos que coincidan.</div>';}
+const uFmt=n=>nfq.format(n)+(n===1?' unidad':' unidades');
+function finRows(list,res){return list.length?stkHead('Producto terminado')+list.map(r=>{const n=Math.max(0,num(r.stock)),rv=res.fin[r.id]||0;
   return `<div class="stk"><div class="sn2"><b>${esc(r.nombre)}</b><small class="muted">${esc(r.cat||'')} · rinde ${num(r.porciones)} porciones</small></div>
     <div class="stepper"><button class="icon-btn" data-act="fstk" data-rid="${r.id}" data-d="-1" aria-label="Uno menos de ${esc(r.nombre)}">−</button><input class="inp" data-fstk="${r.id}" type="number" inputmode="numeric" min="0" step="1" value="${n}" aria-label="Unidades hechas de ${esc(r.nombre)}"><button class="icon-btn" data-act="fstk" data-rid="${r.id}" data-d="1" aria-label="Uno más de ${esc(r.nombre)}">+</button></div>
-    <span class="small muted num eq">${n===1?'1 hecho':n+' hechos'}</span><span class="chip ${st[0]}">${st[1]}</span></div>`;}).join('')||'<div class="empty">No hay productos que coincidan.</div>';}
+    ${availHTML(n,rv,'',uFmt)}</div>`;}).join(''):'<div class="empty">No hay productos que coincidan.</div>';}
 function stockListHTML(res){res=res||reservas();const q=norm(UI.stQ),by=(a,b)=>a.nombre.localeCompare(b.nombre,'es');
   if(UI.stTab==='fin')return finRows(S.recipes.filter(r=>!q||norm(r.nombre+' '+r.cat).includes(q)).sort(by),res);
   return stockRows(S.products.filter(p=>p.tipo===UI.stTab&&(!q||norm(p.nombre+' '+p.marca).includes(q))).sort(by),res);}
-function updStk(p){const st=stState(p,reservas());
-  const c=document.getElementById('stc-'+p.id),q=document.getElementById('stq-'+p.id);if(c){c.className='chip '+st[0];c.textContent=st[1];}if(q)q.textContent=fQty(physQ(p),baseUnit(p));}
+function updStk(p){const a=document.getElementById('sta-'+p.id),q=document.getElementById('stq-'+p.id);
+  if(a)a.outerHTML=pAvail(p,reservas());if(q)q.textContent=fQty(physQ(p),baseUnit(p));}
 // Lo mismo se ve en Mercado y en Mi taller: es un solo stock.
 function stockView(){
   const res=reservas(),buy=shortages(),pend=S.pedidos.filter(o=>!o.entregado).length,t=UI.stTab;
