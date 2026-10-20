@@ -452,7 +452,7 @@ p{margin:0}
 .mtot{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
 .mtot div{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:15px 17px;display:grid;gap:4px}
 .mtot b{font:800 21px var(--f-body);font-variant-numeric:tabular-nums}
-.po-pic{aspect-ratio:16/7;border-radius:20px;max-width:100%}
+.po-pic{aspect-ratio:auto;height:220px;border-radius:20px;max-width:100%;flex:none}@media (max-width:600px){.po-pic{height:150px}}/* altura fija: en la grilla del panel, con aspect-ratio la fila medía 0 y la foto tapaba los botones (PDF, cobrar, entregar) */
 .po-items{display:grid;gap:8px}
 .po-it{display:grid;grid-template-columns:minmax(0,1fr) 128px 76px 36px;gap:8px;align-items:center;padding:8px;border-radius:14px;background:var(--surface-2);animation:rise .35s var(--ease)}
 .po-it select.inp{min-height:40px;padding:8px 10px;font-size:14px;background:var(--surface)}
@@ -2961,17 +2961,29 @@ function produccionReport(iso){
   return {file:'produccion-'+iso,kind:'Hoja de producción',sheet:'Producción',landscape:true,title:'Producción del '+fLong(iso),sub:lbl+' · '+d.orders.length+' pedidos · '+d.hechos+' entregados',
     kpis:[{l:'Pedidos',v:d.orders.length,k:'int'},{l:'Unidades',v:d.units,k:'int'},{l:'Tu tiempo',v:fMin(d.min),k:'text',hi:true},{l:'Ventas del día',v:d.ventas,k:'money'},{l:'Te queda',v:d.ventas-d.costo,k:'money',tone:'ok'}],sections:secs};
 }
+/* Partes del PDF para el cliente: ella elige cuáles van. Queda guardado en S.settings.pdfCliNo (la lista de las que saca). */
+const PDF_PARTES=[{k:'foto',t:'Foto',d:'La foto del producto'},{k:'entrega',t:'Fecha y entrega',d:'Día, hora, retiro o envío'},{k:'productos',t:'Productos',d:'Qué lleva y cuántos'},
+  {k:'precios',t:'Precios',d:'Precio de cada producto y total'},{k:'pago',t:'Seña y saldo',d:'Lo abonado y lo que falta',pedido:true},{k:'detalles',t:'Detalles',d:'Sabor, decoración, notas'},{k:'gracias',t:'Mensaje final',d:'El saludo de agradecimiento'}];
+const pdfNo=()=>(UI.exp&&UI.exp.no)||new Set(S.settings.pdfCliNo||[]);
+const pdfPicker=a=>{const o=S.pedidos.find(x=>x.id===a)||S.presus.find(x=>x.id===a),no=pdfNo();
+  return `<p class="muted small" style="margin:0 0 -4px">Qué sale en el PDF · tocá para sacarlo o ponerlo</p><div class="pick">${PDF_PARTES.filter(p=>!(p.pedido&&o&&o.presu)).map(p=>`<button class="pk" data-act="pdfsel" data-k="${p.k}" aria-pressed="${!no.has(p.k)}"><b>${p.t}</b><small>${p.d}</small></button>`).join('')}</div>`;};
+const prodCols=pr=>pr?[{h:'Producto',k:'text',w:34,bold:true},{h:'Cantidad',k:'int',w:12,noSum:true},{h:'Precio',k:'money',w:14,noSum:true},{h:'Total',k:'money',w:14,noSum:true}]:[{h:'Producto',k:'text',w:48,bold:true},{h:'Cantidad',k:'int',w:14,noSum:true}];
+const prodRows=(o,vals,pr)=>itemsOf(o).map((it,i)=>pr?[itemName(it),num(it.cant)||1,vals[i]/(num(it.cant)||1),vals[i]]:[itemName(it),num(it.cant)||1]);
 async function comprobanteReport(id){
   const o=S.pedidos.find(x=>x.id===id)||S.presus.find(x=>x.id===id),r=mainR(o),s=saldo(o),vals=itemValues(o);if(o.presu)return presuReport(o,r,vals);
-  const secs=[{type:'table',t:'Tu pedido',cols:[{h:'Producto',k:'text',w:34,bold:true},{h:'Cantidad',k:'int',w:12,noSum:true},{h:'Precio',k:'money',w:14,noSum:true},{h:'Total',k:'money',w:14,noSum:true}],
-    rows:itemsOf(o).map((it,i)=>[itemName(it),num(it.cant)||1,vals[i]/(num(it.cant)||1),vals[i]]),foot:['Total',unitsOf(o),'',num(o.total)]},
-    {type:'table',t:'Pago',cols:[{h:'Concepto',k:'text',w:34,bold:true},{h:'',k:'text',w:12},{h:'',k:'text',w:14},{h:'Monto',k:'money',w:14,noSum:true}],
-      rows:[['Total del pedido','','',num(o.total)],['Ya abonado','','',num(o.total)-s]],foot:[s>0?'Saldo a pagar al retirar':'Pedido pagado','','',s]}];
-  if(o.detalle)secs.push({type:'note',t:'Detalles del pedido',text:o.detalle});
-  secs.push({type:'note',big:true,text:'¡Gracias por elegir La Petit Atelier! Cualquier cambio, avisanos con tiempo.'});
-  return {file:'pedido-'+norm(o.cliente||'cliente').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')+'-'+o.fecha,kind:'Comprobante de pedido',sheet:'Pedido',title:'Pedido de '+(o.cliente||'nuestro cliente'),img:await photoData(r),
-    sub:`Entrega: ${fLong(o.fecha)}${o.hora?' a las '+o.hora+' hs':''} · ${o.entrega==='envio'?'envío a domicilio'+(o.dir?' ('+o.dir+')':''):'retira en el taller'}`,
-    kpis:[{l:'Total',v:num(o.total),k:'money',hi:true},{l:'Ya abonado',v:num(o.total)-s,k:'money',tone:'ok'},{l:s>0?'Saldo':'Estado',v:s>0?s:'Pagado',k:s>0?'money':'text',tone:s>0?'bad':'ok'}],sections:secs};
+  const no=pdfNo(),si=k=>!no.has(k),pr=si('precios');
+  const secs=[];
+  if(si('productos'))secs.push({type:'table',t:'Tu pedido',cols:prodCols(pr),rows:prodRows(o,vals,pr),foot:pr?['Total',unitsOf(o),'',num(o.total)]:['Total',unitsOf(o)]});
+  if(si('pago'))secs.push({type:'table',t:'Pago',cols:[{h:'Concepto',k:'text',w:34,bold:true},{h:'',k:'text',w:12},{h:'',k:'text',w:14},{h:'Monto',k:'money',w:14,noSum:true}],
+      rows:[['Total del pedido','','',num(o.total)],['Ya abonado','','',num(o.total)-s]],foot:[s>0?'Saldo a pagar al retirar':'Pedido pagado','','',s]});
+  if(o.detalle&&si('detalles'))secs.push({type:'note',t:'Detalles del pedido',text:o.detalle});
+  if(si('gracias'))secs.push({type:'note',big:true,text:'¡Gracias por elegir La Petit Atelier! Cualquier cambio, avisanos con tiempo.'});
+  const kpis=[];
+  if(pr||si('pago'))kpis.push({l:'Total',v:num(o.total),k:'money',hi:true});
+  if(si('pago'))kpis.push({l:'Ya abonado',v:num(o.total)-s,k:'money',tone:'ok'},{l:s>0?'Saldo':'Estado',v:s>0?s:'Pagado',k:s>0?'money':'text',tone:s>0?'bad':'ok'});
+  return {file:'pedido-'+norm(o.cliente||'cliente').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')+'-'+o.fecha,kind:'Comprobante de pedido',sheet:'Pedido',title:'Pedido de '+(o.cliente||'nuestro cliente'),img:si('foto')?await photoData(r):null,
+    sub:si('entrega')?`Entrega: ${fLong(o.fecha)}${o.hora?' a las '+o.hora+' hs':''} · ${o.entrega==='envio'?'envío a domicilio'+(o.dir?' ('+o.dir+')':''):'retira en el taller'}`:'',
+    kpis,sections:secs};
 }
 function ingresosReport(ym){
   const J=jobs(ym),ing=sum(J,j=>j.ing),mat=sum(J,j=>j.mat),g=ing-mat,cob=sum(J,j=>j.ing-saldo(j.o)),mName=MESES[+ym.slice(5)-1]+' '+ym.slice(0,4);
@@ -2994,13 +3006,18 @@ function gastosReport(ym){
     kpis:[{l:'Gastos fijos',v:d.fijos,k:'money'},{l:'Operativa',v:d.otros,k:'money'},{l:'Materiales',v:d.materiales,k:'money'},{l:'Total de gastos',v:d.gastos,k:'money',tone:'bad',hi:true,s:d.ventas?nf0.format(d.gastos/d.ventas*100)+'% de lo vendido':''}],sections:secs};
 }
 async function presuReport(o,r,vals){
-  const secs=[{type:'table',t:'Detalle del presupuesto',cols:[{h:'Producto',k:'text',w:34,bold:true},{h:'Cantidad',k:'int',w:12,noSum:true},{h:'Precio',k:'money',w:14,noSum:true},{h:'Total',k:'money',w:14,noSum:true}],
-    rows:itemsOf(o).map((it,i)=>[itemName(it),num(it.cant)||1,vals[i]/(num(it.cant)||1),vals[i]]),foot:['Total',unitsOf(o),'',num(o.total)]}];
-  if(o.detalle)secs.push({type:'note',t:'Lo que conversamos',text:o.detalle});
-  secs.push({type:'note',big:true,text:(o.validez?'Este presupuesto vale hasta el '+fLong(o.validez)+'. ':'')+'Si te sirve, escribinos y lo confirmamos. ¡Gracias por elegir La Petit Atelier!'});
-  return {file:'presupuesto-'+slug(o.cliente||'cliente')+'-'+o.fecha,kind:'Presupuesto',sheet:'Presupuesto',title:'Presupuesto para '+(o.cliente||'vos'),img:await photoData(r),
-    sub:`Para el ${fLong(o.fecha)}${o.hora?' a las '+o.hora+' hs':''} · ${o.entrega==='envio'?'con envío':'retira en el taller'} · emitido el ${fD(o.creado||TODAY)}`,
-    kpis:[{l:'Total',v:num(o.total),k:'money',hi:true},{l:'Vale hasta',v:o.validez?fD(o.validez):'—',k:'text'},{l:'Entrega',v:fD(o.fecha),k:'text'}],sections:secs};
+  const no=pdfNo(),si=k=>!no.has(k),pr=si('precios');
+  const secs=[];
+  if(si('productos'))secs.push({type:'table',t:'Detalle del presupuesto',cols:prodCols(pr),rows:prodRows(o,vals,pr),foot:pr?['Total',unitsOf(o),'',num(o.total)]:['Total',unitsOf(o)]});
+  if(o.detalle&&si('detalles'))secs.push({type:'note',t:'Lo que conversamos',text:o.detalle});
+  if(si('gracias'))secs.push({type:'note',big:true,text:(o.validez?'Este presupuesto vale hasta el '+fLong(o.validez)+'. ':'')+'Si te sirve, escribinos y lo confirmamos. ¡Gracias por elegir La Petit Atelier!'});
+  const kpis=[];
+  if(pr)kpis.push({l:'Total',v:num(o.total),k:'money',hi:true});
+  kpis.push({l:'Vale hasta',v:o.validez?fD(o.validez):'—',k:'text'});
+  if(si('entrega'))kpis.push({l:'Entrega',v:fD(o.fecha),k:'text'});
+  return {file:'presupuesto-'+slug(o.cliente||'cliente')+'-'+o.fecha,kind:'Presupuesto',sheet:'Presupuesto',title:'Presupuesto para '+(o.cliente||'vos'),img:si('foto')?await photoData(r):null,
+    sub:si('entrega')?`Para el ${fLong(o.fecha)}${o.hora?' a las '+o.hora+' hs':''} · ${o.entrega==='envio'?'con envío':'retira en el taller'} · emitido el ${fD(o.creado||TODAY)}`:`Emitido el ${fD(o.creado||TODAY)}`,
+    kpis,sections:secs};
 }
 async function catalogoReport(){
   const list=S.recipes.filter(r=>UI.exp.sel.has(r.id)),items=[];
@@ -3020,11 +3037,11 @@ const EXP={
   mercado:{t:'Lista de precios',d:()=>'Todos tus ingredientes y embalajes con el precio vigente, lo que equivale por kilo o unidad y cuánto cambió.',b:()=>mercadoReport()},
   receta:{t:'Ficha de la receta',d:a=>`La ficha de ${esc((R(a)||{}).nombre||'la receta')}: foto, ingredientes con cantidades y costos, cómo se forma el precio y el paso a paso.`,b:a=>recetaReport(a)},
   produccion:{t:'Hoja de producción',d:a=>`Todo lo que hay que preparar ${a===TODAY?'hoy':'el '+fLong(a)}: pedidos, cantidades, tiempo e ingredientes, con lo que te falta comprar.`,b:a=>produccionReport(a)},
-  comprobante:{t:'PDF para el cliente',pdfOnly:true,d:()=>'Un comprobante lindo para mandarle al cliente: el pedido, la fecha de entrega, la seña y el saldo. No muestra tus costos.',b:a=>comprobanteReport(a)}
+  comprobante:{t:'PDF para el cliente',pdfOnly:true,d:()=>'Un comprobante lindo para mandarle al cliente. Elegí qué sale: lo que marques queda guardado para la próxima. Nunca muestra tus costos.',extra:a=>pdfPicker(a),b:a=>comprobanteReport(a)}
 };
 const FILE_ICO=(lbl,col)=>`<svg class="fi" viewBox="0 0 40 48" aria-hidden="true"><path d="M7 2h19l11 11v31a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" fill="#FFFFFF" stroke="#E6D2CE" stroke-width="2"/><path d="M26 2v11h11" fill="#FDECEB" stroke="#E6D2CE" stroke-width="2" stroke-linejoin="round"/><rect x="1" y="25" width="30" height="13" rx="3.5" fill="${col}"/><text x="16" y="34.6" text-anchor="middle" font-size="8.6" font-weight="800" fill="#FFFFFF" font-family="Nunito, Arial, sans-serif">${lbl}</text></svg>`;
 function openExport(k,a){
-  const e=EXP[k];if(!e)return;UI.exp={k,a,sel:new Set(S.recipes.map(r=>r.id))};
+  const e=EXP[k];if(!e)return;UI.exp={k,a,sel:new Set(S.recipes.map(r=>r.id)),no:new Set(S.settings.pdfCliNo||[])};
   openSheet(`${sheetHead('Exportar',e.t,e.d(a))}
     ${e.extra?e.extra(a):''}
     <div class="expo">
@@ -3170,6 +3187,7 @@ const ACT={
   delgasto:b=>{S.settings.gastos=S.settings.gastos.filter(g=>g.id!==b.dataset.id);save();render();},
   export:b=>openExport(b.dataset.k,b.dataset.a),
   doexp:b=>{if(UI.exp&&UI.exp.k==='catalogo'&&!UI.exp.sel.size){toast('Elegí al menos un producto.');return;}doExport(b.dataset.f);},
+  pdfsel:b=>{const k=b.dataset.k,no=UI.exp.no;if(no.has(k))no.delete(k);else no.add(k);b.setAttribute('aria-pressed',String(!no.has(k)));S.settings.pdfCliNo=[...no];save();},
   catsel:b=>{const id=b.dataset.rid,s=UI.exp.sel;if(s.has(id))s.delete(id);else s.add(id);b.setAttribute('aria-pressed',String(s.has(id)));},
   rview:b=>{UI.rView=b.dataset.v;try{localStorage.setItem(KEY+'-rview',UI.rView);}catch(e){}render();},
   ttab:b=>{UI.tTab=b.dataset.t;render();},
